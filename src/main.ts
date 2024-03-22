@@ -2,6 +2,8 @@ import p5 from "p5";
 
 import './style.css'
 
+let pause = false
+
 interface Vector {
   x: number;
   y: number;
@@ -44,21 +46,29 @@ let possible_moves : Array<Array<Vector>> = []
 
 const colors = [ "#555555", "#FF8080", "#CDFADB", "#58A399", "#A8CD9F",
   "#496989", "#EFBC9B", "#D6DAC8"]
+// const colors = [
+//   "#D9D9D9",
+//   "#595856",
+//   "#8C8A88",
+//   "#262523",
+//   "#BFBEBD",
+// ]
 
 const randomInt = (n : number) => Math.floor(Math.random() * n)
 
 const sketch = (p: p5) => {
   p.setup = () => {
     p.createCanvas(window.innerWidth, window.innerHeight)
+    p.background(240)
 
-    let start : Vector = { x: p.width * 0.5, y: p.height * 0.5 }
+    let start : Vector = { x: p.width * 0.1, y: p.height * 0.5 }
     worms = []
 
     for (let i = 0; i < colors.length; ++i) {
       worms.push({
-        a: start,
-        b: { x: start.x + 15 * i, y: start.y + 15 * i },
-        c: { x: start.x + 20 * i, y: start.y + 20 * i },
+        a: { x: start.x + 200 * i, y: start.y * i },
+        b: { x: start.x + 165 * i, y: start.y + 15 * i },
+        c: { x: start.x + 170 * i, y: start.y + 30 * i },
         completion: 1.0,
         color: colors[i],
         last_move_id: i % moves.length
@@ -83,11 +93,12 @@ const sketch = (p: p5) => {
   }
 
   p.draw = () => {
+    if (pause) { return }
+
     // p.background(240)
     p.stroke(100)
     // p.noStroke()
-    p.strokeWeight(5)
-    // p.fill(100)
+    p.strokeWeight(1)
     // p.rect(10, 10, 100, 100)
 
     worms.forEach(worm => {
@@ -95,11 +106,16 @@ const sketch = (p: p5) => {
       worm.position2 = interpolate(worm.b, worm.c, worm.completion)
 
       let c = p.color(worm.color)
-      c.setAlpha(100)
+      c.setAlpha(10)
       p.stroke(c)
-      p.line(worm.position1.x, worm.position1.y, worm.position2.x, worm.position2.y)
+      p.fill(c)
+      // p.line(worm.position1.x, worm.position1.y, worm.position2.x, worm.position2.y)
+      p.curve(worm.a.x, worm.a.y,
+              worm.position1.x, worm.position1.y,
+              worm.position2.x, worm.position2.y,
+              worm.c.x, worm.c.y)
 
-      worm.completion += p.deltaTime * 0.005
+      worm.completion += p.deltaTime * 0.0002
 
       if (worm.completion >= 1.0) {
         worm.completion -= 1.0
@@ -109,19 +125,22 @@ const sketch = (p: p5) => {
 
         let random_i : number = randomInt(2)
         let random_move : Vector = possible_moves[worm.last_move_id][random_i]
-        let n = 1
+        let n = 5
         if ((worm.c.y <= n * move_size && random_move.y < 0) ||
             (worm.c.y > window.innerHeight - n * move_size && random_move.y > 0) ||
               (worm.c.x <= n * move_size && random_move.x < 0) ||
                 (worm.c.x > window.innerWidth - n * move_size && random_move.x > 0)) {
           random_move = possible_moves[worm.last_move_id][(random_i + 1) % 2]
 
-        worm.last_move_id = moves.findIndex(move => move == random_move)
+          worm.last_move_id = moves.findIndex(move => move == random_move)
         }
+
         worm.c = { x: worm.c.x + random_move.x, y: worm.c.y + random_move.y }
       }
     })
   }
 }
+
+window.onkeyup = () => { pause = !pause }
 
 new p5(sketch)
