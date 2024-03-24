@@ -4,138 +4,354 @@ import './style.css'
 
 let pause = false
 
-interface Vector {
+type Vector = {
   x: number;
   y: number;
 }
 
-interface Worm {
-  a: Vector;
-  b: Vector;
-  c: Vector;
-  completion: number;
-  position1?: Vector;
-  position2?: Vector;
-  color: string;
-  last_move_id: number;
+type Worm = {
+  points: Array<Vector>,
+  completion: number,
+  color: string,
+  segment_moves: Array<Move>,
 }
 
-let worms : Array<Worm>
+type MoveType = "down" | "left" | "right" | "up"
 
-const interpolate = (v1: Vector, v2: Vector, a: number) => (
-  {
-    x: v1.x * (1.0 - a) + v2.x * a,
-    y: v1.y * (1.0 - a) + v2.y * a
-  }
+type MoveKey = "down" | "left" | "right" | "up" | "left_and_up" | "left_and_down" | "right_and_up" | "right_and_down" | "down_and_left" | "down_and_right" | "up_and_left" | "up_and_right"
+
+type Move = {
+  type: MoveType,
+  next_point: (x: number, y: number) => Vector,
+  preDraw: (x1: number, y1: number, x2: number, y2: number, c: number) => void
+  draw: (x1: number, y1: number, x2: number, y2: number) => void
+  postDraw: (x1: number, y1: number, x2: number, y2: number, c: number) => void
+}
+
+type Moves = Record<MoveKey, Move>
+
+type PossibleMoveKeys = Record<MoveType, Array<MoveKey>>
+
+
+const randomElement = <Type>(arr : Array<Type>) : Type => (
+  arr[Math.floor(Math.random() * arr.length)]
 )
 
-const move_size : number = 50
-
-const moves = [
-  { x: 0, y: move_size },
-  { x: 0, y: -move_size },
-  { x: move_size, y: -move_size },
-  { x: move_size, y: 0 },
-  { x: move_size, y: move_size },
-  { x: -move_size, y: -move_size },
-  { x: -move_size, y: 0 },
-  { x: -move_size, y: move_size },
-]
-
-let possible_moves : Array<Array<Vector>> = []
-
-const colors = [ "#555555", "#FF8080", "#CDFADB", "#58A399", "#A8CD9F",
-  "#496989", "#EFBC9B", "#D6DAC8"]
-// const colors = [
-//   "#D9D9D9",
-//   "#595856",
-//   "#8C8A88",
-//   "#262523",
-//   "#BFBEBD",
-// ]
-
-const randomInt = (n : number) => Math.floor(Math.random() * n)
-
 const sketch = (p: p5) => {
+  let worms : Array<Worm>
+
+  const move_size : number = 50
+  const move_size_double : number = move_size * 2
+  const margin_size : number = move_size * 3
+  const points_n : number = 5
+
+  const interpolate = (a1: number, a2: number, c: number) => (
+      a1 * (1.0 - c) + a2 * c
+  )
+
+  const linePreDraw = (x1: number, y1: number, x2: number, y2: number, c: number) => {
+    p.line(interpolate(x1, x2, c), interpolate(y1, y2, c), x2, y2)
+  }
+  const lineDraw = (x1: number, y1: number, x2: number, y2: number) => {
+    p.line(x1, y1, x2, y2)
+  }
+  const linePostDraw = (x1: number, y1: number, x2: number, y2: number, c: number) => {
+    p.line(x1, y1, interpolate(x1, x2, c), interpolate(y1, y2, c))
+  }
+
+  const moves : Moves = {
+    down: {
+      type: "down",
+      next_point: (x: number, y: number) : Vector => (
+        { x: x, y: y + move_size }
+      ),
+      preDraw: linePreDraw,
+      draw: lineDraw,
+      postDraw: linePostDraw,
+    },
+    down_and_left: {
+      type: "left",
+      next_point: (x: number, y: number) : Vector => (
+        { x: x - move_size, y: y + move_size }
+      ),
+      preDraw: (x1: number, y1: number, _x2: number, _y2: number, c: number) => {
+        p.arc(x1 - move_size, y1, move_size_double, move_size_double, 0 + c * p.HALF_PI, p.HALF_PI)
+      },
+      draw: (x1: number, y1: number, _x2: number, _y2: number) => {
+        p.arc(x1 - move_size, y1, move_size_double, move_size_double, 0, p.HALF_PI)
+      },
+      postDraw: (x1: number, y1: number, _x2: number, _y2: number, c: number) => {
+        p.arc(x1 - move_size, y1, move_size_double, move_size_double, 0, p.HALF_PI * c)
+      },
+    },
+    down_and_right: {
+      type: "right",
+      next_point: (x: number, y: number) : Vector => (
+        { x: x + move_size, y: y + move_size }
+      ),
+      preDraw: (x1: number, y1: number, _x2: number, _y2: number, c: number) => {
+        p.arc(x1 + move_size, y1, move_size_double, move_size_double, p.HALF_PI, p.PI - p.HALF_PI * c)
+      },
+      draw: (x1: number, y1: number, _x2: number, _y2: number) => {
+        p.arc(x1 + move_size, y1, move_size_double, move_size_double, p.HALF_PI, p.PI)
+      },
+      postDraw: (x1: number, y1: number, _x2: number, _y2: number, c: number) => {
+        p.arc(x1 + move_size, y1, move_size_double, move_size_double, p.HALF_PI + (1 - c) * p.HALF_PI, p.PI)
+      },
+    },
+    left: {
+      type: "left",
+      next_point: (x: number, y: number) : Vector => (
+        { x: x - move_size, y: y }
+      ),
+      preDraw: linePreDraw,
+      draw: lineDraw,
+      postDraw: linePostDraw,
+    },
+    left_and_down: {
+      type: "down",
+      next_point: (x: number, y: number) : Vector => (
+        { x: x - move_size, y: y + move_size }
+      ),
+      preDraw: (x1: number, y1: number, _x2: number, _y2: number, c: number) => {
+        p.arc(x1, y1 + move_size, move_size_double, move_size_double, p.PI, p.PI + p.HALF_PI * (1 - c))
+      },
+      draw: (x1: number, y1: number, _x2: number, _y2: number) => {
+        p.arc(x1, y1 + move_size, move_size_double, move_size_double, p.PI, p.PI + p.HALF_PI)
+      },
+      postDraw: (x1: number, y1: number, _x2: number, _y2: number, c: number) => {
+        p.arc(x1, y1 + move_size, move_size_double, move_size_double, p.PI + p.HALF_PI * (1 - c), p.PI + p.HALF_PI)
+      },
+    },
+    left_and_up: {
+      type: "up",
+      next_point: (x: number, y: number) : Vector => (
+        { x: x - move_size, y: y - move_size }
+      ),
+      preDraw: (x1: number, y1: number, _x2: number, _y2: number, c: number) => {
+        p.arc(x1, y1 - move_size, move_size_double, move_size_double, p.HALF_PI + c * p.HALF_PI, p.PI)
+      },
+      draw: (x1: number, y1: number, _x2: number, _y2: number) => {
+        p.arc(x1, y1 - move_size, move_size_double, move_size_double, p.HALF_PI, p.PI)
+      },
+      postDraw: (x1: number, y1: number, _x2: number, _y2: number, c: number) => {
+        p.arc(x1, y1 - move_size, move_size_double, move_size_double, p.HALF_PI, p.PI - (1 - c) * p.HALF_PI)
+      },
+    },
+    up: {
+      type: "up",
+      next_point: (x: number, y: number) : Vector => (
+        { x: x, y: y - move_size }
+      ),
+      preDraw: linePreDraw,
+      draw: lineDraw,
+      postDraw: linePostDraw,
+    },
+    up_and_left: {
+      type: "left",
+      next_point: (x: number, y: number) : Vector => (
+        { x: x - move_size, y: y - move_size }
+      ),
+      preDraw: (x1: number, y1: number, _x2: number, _y2: number, c: number) => {
+        p.arc(x1 - move_size, y1, move_size_double, move_size_double, p.PI + p.HALF_PI, p.PI * 2 - p.HALF_PI * c)
+      },
+      draw: (x1: number, y1: number, _x2: number, _y2: number) => {
+        p.arc(x1 - move_size, y1, move_size_double, move_size_double, p.PI + p.HALF_PI, p.PI * 2)
+      },
+      postDraw: (x1: number, y1: number, _x2: number, _y2: number, c: number) => {
+        p.arc(x1 - move_size, y1, move_size_double, move_size_double, p.PI + p.HALF_PI + p.HALF_PI * (1 - c), 0)
+      },
+    },
+    up_and_right: {
+      type: "right",
+      next_point: (x: number, y: number) : Vector => (
+        { x: x + move_size, y: y - move_size }
+      ),
+      preDraw: (x1: number, y1: number, _x2: number, _y2: number, c: number) => {
+        p.arc(x1 + move_size, y1, move_size_double, move_size_double, p.PI + c * p.HALF_PI, p.PI + p.HALF_PI)
+      },
+      draw: (x1: number, y1: number, _x2: number, _y2: number) => {
+        p.arc(x1 + move_size, y1, move_size_double, move_size_double, p.PI, p.PI + p.HALF_PI)
+      },
+      postDraw: (x1: number, y1: number, _x2: number, _y2: number, c: number) => {
+        p.arc(x1 + move_size, y1, move_size_double, move_size_double, p.PI, p.PI + p.HALF_PI * c)
+      },
+    },
+    right: {
+      type: "right",
+      next_point: (x: number, y: number) : Vector => (
+        { x: x + move_size, y: y }
+      ),
+      preDraw: linePreDraw,
+      draw: lineDraw,
+      postDraw: linePostDraw,
+    },
+    right_and_down: {
+      type: "down",
+      next_point: (x: number, y: number) : Vector => (
+        { x: x + move_size, y: y + move_size }
+      ),
+      preDraw: (x1: number, y1: number, _x2: number, _y2: number, c: number) => {
+        p.arc(x1, y1 + move_size, move_size_double, move_size_double, p.PI + p.HALF_PI + p.HALF_PI * c, 0)
+      },
+      draw: (x1: number, y1: number, _x2: number, _y2: number) => {
+        p.arc(x1, y1 + move_size, move_size_double, move_size_double, p.PI + p.HALF_PI, 0)
+      },
+      postDraw: (x1: number, y1: number, _x2: number, _y2: number, c: number) => {
+        p.arc(x1, y1 + move_size, move_size_double, move_size_double, p.PI + p.HALF_PI, p.PI + p.HALF_PI + p.HALF_PI * c)
+      },
+    },
+    right_and_up: {
+      type: "up",
+      next_point: (x: number, y: number) : Vector => (
+        { x: x + move_size, y: y - move_size }
+      ),
+      preDraw: (x1: number, y1: number, _x2: number, _y2: number, c: number) => {
+        p.arc(x1, y1 - move_size, move_size_double, move_size_double, 0, p.HALF_PI - c * p.HALF_PI)
+      },
+      draw: (x1: number, y1: number, _x2: number, _y2: number) => {
+        p.arc(x1, y1 - move_size, move_size_double, move_size_double, 0, p.HALF_PI)
+      },
+      postDraw: (x1: number, y1: number, _x2: number, _y2: number, c: number) => {
+        p.arc(x1, y1 - move_size, move_size_double, move_size_double, p.HALF_PI * (1 - c), p.HALF_PI)
+      },
+    },
+  }
+
+  const possible_move_keys : PossibleMoveKeys = {
+    down: ["down", "down_and_left", "down_and_right"],
+    left: ["left", "left_and_down", "left_and_up"],
+    up: ["up", "up_and_left", "up_and_right"],
+    right: ["right", "right_and_down", "right_and_up"],
+  }
+
+  const move_keys = <Array<MoveKey>>Object.keys(moves)
+
+  function picked_next_move(point : Vector, move : Move) : Move {
+    let possible_next_keys : Array<MoveKey> = possible_move_keys[move.type]
+    let possible_next_moves : Array<Move> = possible_next_keys.map(key => moves[key])
+    let not_types = []
+    if (point.y <= margin_size) {
+      not_types.push("up")
+    } else if (point.y > window.innerHeight - margin_size) {
+      not_types.push("down")
+    }
+    if (point.x <= margin_size) {
+      not_types.push("left")
+    } else if (point.x > window.innerWidth - margin_size) {
+      not_types.push("right")
+    }
+
+    if (not_types.length == 0) {
+      return randomElement(possible_next_moves)
+    } else {
+      return randomElement(
+        possible_next_moves.filter(move => !not_types.includes(move.type))
+      )
+    }
+  }
+
+  const colors = [
+    "#555555",
+    "#FF8080",
+    "#CDFADB",
+    "#58A399",
+    "#A8CD9F",
+    "#496989",
+    "#EFBC9B",
+    "#D6DAC8",
+
+    "#555555",
+    "#FF8080",
+    "#CDFADB",
+    "#58A399",
+    "#A8CD9F",
+    "#496989",
+    "#EFBC9B",
+    "#D6DAC8",
+  ]
+
   p.setup = () => {
     p.createCanvas(window.innerWidth, window.innerHeight)
     p.background(240)
 
-    let start : Vector = { x: p.width * 0.1, y: p.height * 0.5 }
+    let start : Vector = { x: p.width * 0.2, y: p.height * 0.5 }
     worms = []
 
     for (let i = 0; i < colors.length; ++i) {
+      let start_x = start.x + p.width * 0.6 * i / colors.length + Math.random() * move_size * 0.5
+      let start_y = start.y + Math.random() * (p.height * 0.3 - margin_size)
+      let points : Array<Vector> = []
+      points.push({ x: start_x, y: start_y })
+      let segment_moves : Array<Move> = []
+      segment_moves.push(moves[randomElement(move_keys)])
+      points.push(segment_moves[0].next_point(points[0].x, points[0].y))
+      for (let i = 1; i < points_n - 1; ++i) {
+        let next_move = picked_next_move(points[i], segment_moves[i - 1])
+        points.push(next_move.next_point(points[i].x, points[i].y))
+        segment_moves.push(next_move)
+      }
       worms.push({
-        a: { x: start.x + 200 * i, y: start.y * i },
-        b: { x: start.x + 165 * i, y: start.y + 15 * i },
-        c: { x: start.x + 170 * i, y: start.y + 30 * i },
-        completion: 1.0,
+        points: points,
+        completion: i / colors.length,
         color: colors[i],
-        last_move_id: i % moves.length
+        segment_moves: segment_moves,
       })
     }
-
-    moves.forEach(move => {
-      let possible_for_move : Array<Vector> = []
-
-      moves.forEach(maybe_move => {
-        if (move != maybe_move &&
-            ((move.x == maybe_move.x &&
-              Math.abs(move.y - maybe_move.y) < 2 * move_size) ||
-                (move.y == maybe_move.y &&
-                 Math.abs(move.x - maybe_move.x) < 2 * move_size))) {
-          possible_for_move.push(maybe_move)
-        }
-      })
-
-      possible_moves.push(possible_for_move)
-    })
   }
 
   p.draw = () => {
     if (pause) { return }
 
-    // p.background(240)
-    p.stroke(100)
-    // p.noStroke()
-    p.strokeWeight(1)
-    // p.rect(10, 10, 100, 100)
+    p.background(240)
+    p.strokeWeight(10)
+    p.strokeCap(p.SQUARE)
+    p.noFill()
 
     worms.forEach(worm => {
-      worm.position1 = interpolate(worm.a, worm.b, worm.completion)
-      worm.position2 = interpolate(worm.b, worm.c, worm.completion)
-
       let c = p.color(worm.color)
-      c.setAlpha(10)
+      // c.setAlpha(100)
       p.stroke(c)
-      p.fill(c)
-      // p.line(worm.position1.x, worm.position1.y, worm.position2.x, worm.position2.y)
-      p.curve(worm.a.x, worm.a.y,
-              worm.position1.x, worm.position1.y,
-              worm.position2.x, worm.position2.y,
-              worm.c.x, worm.c.y)
 
-      worm.completion += p.deltaTime * 0.0002
+      for (let i = 0; i < points_n - 1; ++i) {
+        let x1 = worm.points[i].x
+        let y1 = worm.points[i].y
+        let x2 = worm.points[i + 1].x
+        let y2 = worm.points[i + 1].y
+
+        if (x1 != x2 || y1 != y2) {
+          if (i == 0) {
+            worm.segment_moves[i].preDraw(x1, y1, x2, y2, worm.completion)
+          } else if (i == points_n - 2) {
+            worm.segment_moves[i].postDraw(x1, y1, x2, y2, worm.completion)
+          } else {
+            worm.segment_moves[i].draw(x1, y1, x2, y2)
+          }
+        }
+      }
+
+      worm.completion += p.deltaTime * 0.001
 
       if (worm.completion >= 1.0) {
         worm.completion -= 1.0
 
-        worm.a = worm.b
-        worm.b = worm.c
-
-        let random_i : number = randomInt(2)
-        let random_move : Vector = possible_moves[worm.last_move_id][random_i]
-        let n = 5
-        if ((worm.c.y <= n * move_size && random_move.y < 0) ||
-            (worm.c.y > window.innerHeight - n * move_size && random_move.y > 0) ||
-              (worm.c.x <= n * move_size && random_move.x < 0) ||
-                (worm.c.x > window.innerWidth - n * move_size && random_move.x > 0)) {
-          random_move = possible_moves[worm.last_move_id][(random_i + 1) % 2]
-
-          worm.last_move_id = moves.findIndex(move => move == random_move)
+        for (let i : number = 0; i < points_n - 1; ++i) {
+          worm.points[i] = worm.points[i + 1]
         }
 
-        worm.c = { x: worm.c.x + random_move.x, y: worm.c.y + random_move.y }
+        for (let i : number = 0; i < points_n - 2; ++i) {
+          worm.segment_moves[i] = worm.segment_moves[i + 1]
+        }
+
+        let next_move = picked_next_move(
+          worm.points[points_n - 1],
+          worm.segment_moves[points_n -2]
+        )
+        worm.segment_moves[points_n - 2] = next_move
+        worm.points[points_n - 1] =
+          next_move.next_point(
+            worm.points[points_n - 1].x, worm.points[points_n - 1].y
+        )
       }
     })
   }
